@@ -1,5 +1,6 @@
 import click
 import sys
+import numpy as np
 
 def remove_recurring(coords):
     if len(coords) < 2: return coords
@@ -17,28 +18,104 @@ def remove_recurring(coords):
         r = r[:-1]
     return r
 
+def auto_square_fix(coords, normal):
+    edges = []
+    for (idx, v) in enumerate(coords):
+        prev_v = coords[((idx - 1) + len(coords)) % len(coords)]
+        e = v - prev_v
+        e = e - np.dot(e, normal) * normal
+        edges.append(e)
+
+    def find_best_edge(key):
+        best = None
+        best_val = 0
+        for e in edges:
+            val = key(e)
+            if best is None or val > best_val:
+                best = e
+                best_val = val
+        return best
+
+    THRESHOLD_DEG = 3.0
+    THRESHOLD_SIN = np.sin(THRESHOLD_DEG / 180.0 * np.pi)
+
+    def vert_edge_score(e):
+        l = np.linalg.norm(e)
+        horiz = np.linalg.norm(e[:2])
+        if horiz / l > THRESHOLD_SIN: return -1
+        return l / (horiz + 1e-6)
+
+    vertical_edge = find_best_edge(vert_edge_score)
+    vertical_edge /= np.linalg.norm(vertical_edge)
+
+    def horiz_edge_score(e):
+        l = np.linalg.norm(e)
+        if abs(np.dot(e, vertical_edge) / l) > THRESHOLD_SIN: return -1
+        return l / (abs(e[2]) + 1e-6)
+
+    horizontal_edge = find_best_edge(horiz_edge_score)
+    horizontal_edge /= np.linalg.norm(horizontal_edge)
+
+    #horizontal_edge = horizontal_edge - np.dot(horizontal_edge, vertical_edge) * vertical_edge
+    #horizontal_edge /= np.linalg.norm(horizontal_edge)
+
+    if max(np.linalg.norm(vertical_edge[:2]), abs(horizontal_edge[2])) > THRESHOLD_SIN:
+        return None
+
+    THRESHOLD_M = 1.0
+    origin = coords[0]
+
+    xy_coords = []
+    for c in coords:
+        c1 = c - origin
+        x = np.dot(c1, horizontal_edge)
+        y = np.dot(c1, vertical_edge)
+        z = np.dot(c1, normal)
+        if abs(z) > THRESHOLD_M: return None
+        xy_coords.append((x, y))
+
+    x0 = min([x for x, y in xy_coords])
+    x1 = max([x for x, y in xy_coords])
+    y0 = min([y for x, y in xy_coords])
+    y1 = max([y for x, y in xy_coords])
+
+    for x, y in xy_coords:
+        diff_x = min(abs(x - x0), abs(x - x1))
+        diff_y = min(abs(y - y0), abs(y - y1))
+        diff = min(diff_x, diff_y)
+        if diff > THRESHOLD_M: return None
+
+    xy_coords = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+    triangles = [[0, 1, 2], [2, 3, 0]]
+    vertices = []
+    for x, y in xy_coords:
+        v = origin + x * horizontal_edge + y * vertical_edge
+        vertices.append(v.tolist())
+
+    return vertices, triangles
+
 def linear_ring_to_triangles(coords):
     coords = remove_recurring(coords)
 
     if len(coords) < 3: return [], []
-    import numpy as np
-    import thirdparty.tripy
 
-    v0, v1, v2 = [np.array(v) for v in coords[:3]]
-    e1 = v0 - v1
-    e2 = v2 - v1
-    normal = np.cross(e1, e2)
-    # print(normal)
-    l = np.linalg.norm(normal)
-    if l < 1e-6: return [], []
-    normal = normal / l
-    # coords.append(coords[0])
+    coords = np.array(coords)
 
-    t1 = e1 / np.linalg.norm(e1)
-    t2 = np.cross(t1, normal)
-    # print(t1, t2, np.dot(t1, t2))
+    origin = np.mean(coords, axis=0)
+    C = np.dot((coords - origin).transpose(), coords - origin)
+    u, s, vh = np.linalg.svd(C)
+    t1 = u[:, 0]
+    t2 = u[:, 1]
+    normal = u[:, 2]
 
-    origin = v1
+    # in th Espoo dataset, a large percentage of walls (and other surfaces)
+    # seem to be missing vertices. A crude attempt to fix this by fixing all
+    # things that look like a (part of) a rectangular wall to rectangles
+    auto_fixed = auto_square_fix(coords, normal)
+    if auto_fixed is not None:
+        return auto_fixed
+    # return [], []
 
     xy_coords = []
     seg = []
@@ -51,23 +128,11 @@ def linear_ring_to_triangles(coords):
         # print(c, (x,y))
         xy_coords.append([x, y])
 
-    # some data just seems to be missing
-    # bounding_box = False
-    bounding_box = abs(normal[2]) < 0.1 and len(coords) <= 4
-
-    if bounding_box:
-        x0 = min([x for x, y in xy_coords])
-        x1 = max([x for x, y in xy_coords])
-        y0 = min([y for x, y in xy_coords])
-        y1 = max([y for x, y in xy_coords])
-        xy_coords = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-        # could also use tripy but faster if we don't
-        vertices_xy = xy_coords
-        triangles = [[0, 1, 2], [2, 3, 0]]
-    elif len(coords) == 3:
+    if len(coords) == 3:
         vertices_xy = xy_coords
         triangles = [[0, 1, 2]]
     else:
+        import thirdparty.tripy
         triangles = []
         vertices_xy = []
         vertices_map = {}
@@ -86,18 +151,6 @@ def linear_ring_to_triangles(coords):
         vertices.append(v.tolist())
 
     return vertices, triangles
-
-    #t = triangle.triangulate({ 'vertices': xy_coords, 'segments': seg })
-    #vertices = []
-    #for x, y in t['vertices'].tolist():
-    #    v = origin + x * t1 + y * t2
-    #    # print((x,y), v)
-    #    vertices.append(v.tolist())
-    #return vertices, t['triangles'].tolist()
-
-    #vertices = coords
-    #triangles = triangle.delaunay(xy_coords)
-    #return vertices, triangles.tolist()
 
 def cityglm_to_obj(s, origin_latitude, origin_longitude, origin_altitude, coordinateSystem='WGS84', target='bldg:outerBuildingInstallation'):
     import coordinates
@@ -124,7 +177,7 @@ def cityglm_to_obj(s, origin_latitude, origin_longitude, origin_altitude, coordi
     line_rows = []
 
     for poly in root.findall('.//gml:Polygon', ns):
-        if len(poly.findall('.//gml:innerBoundaryIs', ns)) > 0: continue
+        # if len(poly.findall('.//gml:innerBoundaryIs', ns)) > 0: continue
         for coords in poly.findall('.//gml:outerBoundaryIs//gml:coordinates', ns):
             xyz = []
             vertex_idx_offset = len(vertex_rows) + 1 # 1-based indices
