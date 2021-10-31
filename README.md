@@ -5,7 +5,7 @@
     * (every time): Activate: `venv/bin/activate`
  2. (once) Install: `pip install -r requirements.txt`
 
-## Commands
+## Downloading
 
 List available datasets
 
@@ -18,3 +18,10 @@ Download a particular dataset
     mkdir -p data
     python download.py --url=... GetFeature \
         "example_namespace:example_name" --maxFeatures=100 > data/dataset.xml
+
+## Conversions
+
+Example:
+
+    python convert.py to_obj 6673665.767760608 25489120.986737024 \
+      --coordinateSystem=EPSG:3879 < data/dataset.xml > data/dataset.obj
