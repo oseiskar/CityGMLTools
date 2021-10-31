@@ -115,7 +115,8 @@ def linear_ring_to_triangles(coords):
     auto_fixed = auto_square_fix(coords, normal)
     if auto_fixed is not None:
         return auto_fixed
-    # return [], []
+
+    # return [], [] # show only auto-fixed walls
 
     xy_coords = []
     seg = []
@@ -146,9 +147,21 @@ def linear_ring_to_triangles(coords):
             triangles.append(index_tri)
 
     vertices = []
-    for x, y in vertices_xy:
-        v = origin + x * t1 + y * t2
-        vertices.append(v.tolist())
+    orig_vertices_map = {}
+    for idx, c in enumerate(xy_coords):
+        orig_vertices_map[tuple(c)] = idx
+
+    for c in vertices_xy:
+        c = tuple(c)
+        if c in orig_vertices_map:
+            # supports also non-planar surfaces and can help to avoid
+            # adding numerical errors
+            v = coords[orig_vertices_map[c]]
+        else:
+            # sys.stderr.write('synth vertex\n')
+            x, y = c
+            v = origin + x * t1 + y * t2
+        vertices.append(v)
 
     return vertices, triangles
 
