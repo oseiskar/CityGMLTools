@@ -1,10 +1,28 @@
 import click
 import sys
 
+def remove_recurring(coords):
+    if len(coords) < 2: return coords
+    r = []
+    prev_ct = None
+    for idx, c in enumerate(coords):
+        ct = tuple(list(c))
+        if ct != prev_ct:
+            r.append(c)
+        else:
+            sys.stderr.write('WARN: removed recurring vertex at idx %d/%d\n' % (idx+1, len(coords)))
+        prev_ct = ct
+    if prev_ct == tuple(list(coords[0])):
+        # sys.stderr.write('removed recurring last vertex\n')
+        r = r[:-1]
+    return r
+
 def linear_ring_to_triangles(coords):
-    # if len(coords) <= 3: return coords, [[0, 1, 2]]
+    coords = remove_recurring(coords)
+
     if len(coords) < 3: return [], []
     import numpy as np
+    import thirdparty.tripy
 
     v0, v1, v2 = [np.array(v) for v in coords[:3]]
     e1 = v0 - v1
@@ -35,7 +53,7 @@ def linear_ring_to_triangles(coords):
 
     # some data just seems to be missing
     # bounding_box = False
-    bounding_box = abs(normal[2]) < 0.01 or len(coords) < 4
+    bounding_box = abs(normal[2]) < 0.1 and len(coords) <= 4
 
     if bounding_box:
         x0 = min([x for x, y in xy_coords])
@@ -43,19 +61,39 @@ def linear_ring_to_triangles(coords):
         y0 = min([y for x, y in xy_coords])
         y1 = max([y for x, y in xy_coords])
         xy_coords = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+        # could also use tripy but faster if we don't
+        vertices_xy = xy_coords
+        triangles = [[0, 1, 2], [2, 3, 0]]
+    elif len(coords) == 3:
+        vertices_xy = xy_coords
+        triangles = [[0, 1, 2]]
     else:
-        return coords, [list(range(len(coords)))]
+        triangles = []
+        vertices_xy = []
+        vertices_map = {}
+        for tri in thirdparty.tripy.earclip(xy_coords):
+            index_tri = []
+            for v_xy in tri:
+                if v_xy not in vertices_map:
+                    vertices_map[v_xy] = len(vertices_xy)
+                    vertices_xy.append(v_xy)
+                index_tri.append(vertices_map[v_xy])
+            triangles.append(index_tri)
 
-
-    import triangle
-    t = triangle.triangulate({ 'vertices': xy_coords, 'segments': seg })
     vertices = []
-    for x, y in t['vertices'].tolist():
+    for x, y in vertices_xy:
         v = origin + x * t1 + y * t2
-        # print((x,y), v)
         vertices.append(v.tolist())
 
-    return vertices, t['triangles'].tolist()
+    return vertices, triangles
+
+    #t = triangle.triangulate({ 'vertices': xy_coords, 'segments': seg })
+    #vertices = []
+    #for x, y in t['vertices'].tolist():
+    #    v = origin + x * t1 + y * t2
+    #    # print((x,y), v)
+    #    vertices.append(v.tolist())
+    #return vertices, t['triangles'].tolist()
 
     #vertices = coords
     #triangles = triangle.delaunay(xy_coords)
@@ -106,7 +144,7 @@ def cityglm_to_obj(s, origin_latitude, origin_longitude, origin_altitude, coordi
 
             for tri in triangles:
                 idxs = [str(i + vertex_idx_offset) for i in tri]
-                #assert(len(idxs) == 3)
+                assert(len(idxs) == 3)
                 line_rows.append('f ' + ' '.join(idxs))
 
     for r in vertex_rows:

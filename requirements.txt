@@ -3,4 +3,3 @@ requests
 pyproj
 pymap3d
 numpy
-triangle
