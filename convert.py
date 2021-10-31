@@ -95,7 +95,7 @@ def auto_square_fix(coords, normal):
 
     return vertices, triangles
 
-def linear_ring_to_triangles(coords):
+def linear_ring_to_triangles(coords, autoFixWalls):
     coords = remove_recurring(coords)
 
     if len(coords) < 3: return [], []
@@ -109,12 +109,13 @@ def linear_ring_to_triangles(coords):
     t2 = u[:, 1]
     normal = u[:, 2]
 
-    # in th Espoo dataset, a large percentage of walls (and other surfaces)
-    # seem to be missing vertices. A crude attempt to fix this by fixing all
-    # things that look like a (part of) a rectangular wall to rectangles
-    auto_fixed = auto_square_fix(coords, normal)
-    if auto_fixed is not None:
-        return auto_fixed
+    if autoFixWalls:
+        # in th Espoo dataset, a large percentage of walls (and other surfaces)
+        # seem to be missing vertices. A crude attempt to fix this by fixing all
+        # things that look like a (part of) a rectangular wall to rectangles
+        auto_fixed = auto_square_fix(coords, normal)
+        if auto_fixed is not None:
+            return auto_fixed
 
     # return [], [] # show only auto-fixed walls
 
@@ -165,10 +166,14 @@ def linear_ring_to_triangles(coords):
 
     return vertices, triangles
 
-def cityglm_to_obj(s, origin_latitude, origin_longitude, origin_altitude, coordinateSystem='WGS84', target='bldg:outerBuildingInstallation'):
+def cityglm_to_obj(s, origin_latitude, origin_longitude, origin_altitude, coordinateSystem='WGS84', autoFixWalls=False, accurateEnu=True):
     import coordinates
     to_wgs = coordinates.conversions_wgs84(coordinateSystem)[0]
-    to_enu = coordinates.wgs_to_enu_simple(*to_wgs(origin_latitude, origin_longitude))
+    origin_wgs = to_wgs(origin_latitude, origin_longitude, origin_altitude)
+    if accurateEnu:
+        to_enu = coordinates.wgs_to_enu_geodetic(*origin_wgs)
+    else:
+        to_enu = coordinates.wgs_to_enu_simple(*origin_wgs)
 
     import xml.etree.ElementTree as ET
     root = ET.fromstring(s)
@@ -202,7 +207,7 @@ def cityglm_to_obj(s, origin_latitude, origin_longitude, origin_altitude, coordi
                 x, y = to_enu(lat_wgs, lng_wgs)
                 xyz.append([x, y, alt_wgs])
 
-            vertices, triangles = linear_ring_to_triangles(xyz)
+            vertices, triangles = linear_ring_to_triangles(xyz, autoFixWalls)
             #vertices = xyz
             #triangles = [list(range(len(xyz)))]
             for (x, y, z) in vertices:
@@ -227,8 +232,10 @@ def cli():
 @click.argument('longitude', type=float)
 @click.option('--altitude', type=float, default=0)
 @click.option('--coordinateSystem', default='WGS84')
-def to_obj(latitude, longitude, altitude, coordinatesystem):
-    cityglm_to_obj(sys.stdin.read(), latitude, longitude, altitude, coordinatesystem)
+@click.option('--auto-fix-walls/--no-auto-fix-walls', default=False)
+@click.option('--accurate-enu/--fast-enu', default=False)
+def to_obj(latitude, longitude, altitude, coordinatesystem, auto_fix_walls, accurate_enu):
+    cityglm_to_obj(sys.stdin.read(), latitude, longitude, altitude, coordinatesystem, auto_fix_walls, accurate_enu)
 
 if __name__ == '__main__':
     cli()

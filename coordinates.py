@@ -47,17 +47,33 @@ def radius_to_bounding_box(latitude, longitude, radius_meters, coordinateSystem=
 
     return (lng0, lat0, lng1, lat1)
 
-def wgs_to_enu_simple(lat0, lng0):
+def wgs_to_enu_simple(lat0, lng0, z0 = 0):
     import math
     EARTH_CIRCUMFERENCE_EQUATORIAL = 40075.017e3
     EARTH_CIRCUMFERENCE_POLAR = 40007.863e3
     METERS_PER_LAT_DEG = EARTH_CIRCUMFERENCE_POLAR / 360.0
     m_per_lng_deg = math.cos(lat0 * math.pi / 180.0) * EARTH_CIRCUMFERENCE_EQUATORIAL / 360.0
 
-    def wgs_to_enu(lat, lng):
+    def wgs_to_enu(lat, lng, z = None):
         x = m_per_lng_deg * (lng - lng0)
         y = METERS_PER_LAT_DEG * (lat - lat0)
-        return x, y
+        if z is None:
+            return x, y
+        return x, y, z - z0
+
+    return wgs_to_enu
+
+def wgs_to_enu_geodetic(lat0, lng0, z0 = 0):
+    import pymap3d
+
+    def wgs_to_enu(lat, lng, z = None):
+        alt = 0
+        if z is not None:
+            alt = z
+        e, n, u = pymap3d.geodetic2enu(lat, lng, alt, lat0, lng0, z0)
+        if z is None:
+            return e, n
+        return e, n, u
 
     return wgs_to_enu
 
