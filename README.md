@@ -20,25 +20,40 @@ which did not work with the Espoo dataset, may work with those.
     * (every time): Activate: `venv/bin/activate`
  2. (once) Install: `pip install -r requirements.txt`
 
+## Coordinate helpers
+
+To perform bounding box queries, you may need to convert coordinate systems between, WGS84
+(the "satellite coordinates" you get from, e.g., Google Maps) and local coordinate systems like EPSG:3879
+(that, e.g., move with the tectonic plates).
+
+    python coordinates.py --coordinateSystem=EPSG:3879 single from_wgs 60.1757 24.8040
+
+which should print something like `(6673664.363125221, 25489121.254538767)`.
+
 ## Downloading
 
 List available datasets
 
-    python download.py --url=https://example.com/wfs.ashx GetCapabilities
+    python download.py --url=https://kartat.espoo.fi/teklaogcweb/wfs.ashx GetCapabilities
 
-Look at the `FeatureType/Name` fields in the result XML, something like `example_namespace:example_name`.
+Look at the `FeatureType/Name` fields in the result XML, something like `bldg:building_lod2`.
 
 Download a particular dataset
 
     mkdir -p data
-    python download.py --url=... GetFeature \
-        "example_namespace:example_name" --maxFeatures=100 > data/dataset.xml
+    python download.py --url=https://kartat.espoo.fi/teklaogcweb/wfs.ashx \
+      GetFeature "bldg:building_lod2" \
+      --coordinateSystem=EPSG:3879 --latitude=6673664 --longitude=25489121 --radius=200 \
+      --maxFeatures=100 > data/dataset.xml
+
+After checking that the data looks correct, try expanding the search radius `--radius` (in meters)
+or removing max feature limit (by setting `--maxFeatures=0`).
 
 ## Conversions
 
 Example:
 
-    python convert.py to_obj 6673665.767760608 25489120.986737024 \
+    python convert.py to_obj 6673664 25489121 \
       --auto-fix-walls \
       --coordinateSystem=EPSG:3879 < data/dataset.xml > data/dataset.obj
 
